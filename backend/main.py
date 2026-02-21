@@ -12,7 +12,9 @@ env_path = os.path.join(os.path.dirname(__file__), ".env")
 load_dotenv(dotenv_path=env_path, override=True)
 
 from services.gemini_service import init_gemini, extract_ledger_data
-from services.sheets_service import append_to_sheet
+from services.sheets_service import append_to_sheet, create_and_append_sheet, export_sheet_to_xlsx
+from services.whatsapp_service import get_media_url, download_media, send_whatsapp_message, upload_whatsapp_media, send_whatsapp_document
+import datetime
 
 WHATSAPP_VERIFY_TOKEN = os.getenv("WHATSAPP_VERIFY_TOKEN", "airstore_secure_token_123")
 
@@ -195,12 +197,115 @@ async def verify_webhook(request: Request):
     raise HTTPException(status_code=400, detail="Bad Request")
 
 @app.post("/webhook")
-async def receive_whatsapp_message(request: Request):
+async def receive_whatsapp_message(request: Request, background_tasks: BackgroundTasks):
     """
     Meta sends POST requests here whenever someone messages the WhatsApp bot.
     """
     body = await request.json()
-    print("Incoming WhatsApp Event:", body)
     
-    # We will build out the extraction logic here after we verify the webhook!
+    # 1. Parse incoming message structure
+    try:
+        entries = body.get("entry", [])
+        if not entries: return {"status": "success"}
+        
+        changes = entries[0].get("changes", [])
+        if not changes: return {"status": "success"}
+        
+        value = changes[0].get("value", {})
+        messages = value.get("messages", [])
+        if not messages: return {"status": "success"} # Could be a status update (read/delivered)
+        
+        message = messages[0]
+        sender_phone = message.get("from")
+        msg_type = message.get("type")
+        
+        if msg_type != "image":
+            # Just reply saying we only accept images for now
+            background_tasks.add_task(send_whatsapp_message, sender_phone, "👋 Welcome to AirStore! Please send a clear photo of your handwritten ledger/record to automatically digitize it into Google Sheets.")
+            return {"status": "success"}
+            
+        print(f"Received Image from {sender_phone}...")
+        image_data = message.get("image", {})
+        media_id = image_data.get("id")
+        
+        # We process the heavy extraction in the background to not timeout Meta's webhook
+        background_tasks.add_task(process_whatsapp_image, media_id, sender_phone)
+        
+    except Exception as e:
+        print("Webhook Error:", e)
+        
     return {"status": "success"}
+
+def process_whatsapp_image(media_id: str, sender_phone: str):
+    """
+    Background worker to download, extract, and push the image to Sheets.
+    """
+    try:
+        # A. Send "Processing" message
+        send_whatsapp_message(sender_phone, "⏳ Extracting your ledger with AirStore AI... Please wait a moment.")
+        
+        # B. Download Media
+        media_url = get_media_url(media_id)
+        if not media_url: raise ValueError("Could not get media URL")
+        
+        local_image_path = download_media(media_url)
+        if not local_image_path: raise ValueError("Could not download image")
+        
+        try:
+            # C. Extract Data via Gemini
+            extracted_data = extract_ledger_data(local_image_path)
+            
+            if not extracted_data.get("is_valid_ledger"):
+                send_whatsapp_message(sender_phone, f"❌ Validation failed: {extracted_data.get('error_message')}")
+                return
+                
+            entries = extracted_data.get("entries", [])
+            if not entries:
+                send_whatsapp_message(sender_phone, "⚠️ Could not find any valid entries in the image.")
+                return
+                
+            # D. Push to Google Sheets in a NEW Tab
+            sheet_rows = []
+            for entry in entries:
+                sheet_rows.append([
+                    str(entry.get("date", "")),
+                    str(entry.get("name", "")),
+                    str(entry.get("amount", "")),
+                    str(entry.get("status", ""))
+                ])
+                
+            sheet_id = os.getenv("GOOGLE_SHEET_ID")
+            timestamp_str = datetime.datetime.now().strftime("%Y-%b-%d_%H%M")
+            new_tab_name = f"Log_{timestamp_str}"
+            
+            # Create tab and append rows
+            create_and_append_sheet(sheet_id, new_tab_name, sheet_rows)
+            
+            # E. Export the entire requested sheet (now with new tab) as Excel
+            send_whatsapp_message(sender_phone, "📥 Data extracted! Downloading updated Excel file directly from Google Sheets...")
+            
+            excel_path = f"AirStore_Ledger_{timestamp_str}.xlsx"
+            export_sheet_to_xlsx(sheet_id, excel_path)
+            
+            # F. Upload Media to WhatsApp Meta API
+            media_id = upload_whatsapp_media(excel_path, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+            if not media_id:
+                raise ValueError("Failed to upload Excel file to WhatsApp")
+            
+            # G. Send Document
+            total_items = len(entries)
+            total_amount = sum([float(str(e.get("amount", 0)).replace(',','')) for e in entries if str(e.get("amount", 0)).replace(',','').replace('.','').isdigit()])
+            caption = f"✅ *Extraction Complete!*\n\nProcessed {total_items} entries (Total: {total_amount}).\n\nHere is your full updated Google Sheet file."
+            
+            send_whatsapp_document(sender_phone, media_id, excel_path, caption)
+            
+        finally:
+            # Always clean up temporary images and generated excel files
+            if os.path.exists(local_image_path):
+                os.remove(local_image_path)
+            if 'excel_path' in locals() and os.path.exists(excel_path):
+                os.remove(excel_path)
+                
+    except Exception as e:
+        print("Processing Error:", e)
+        send_whatsapp_message(sender_phone, "⚠️ Sorry, an error occurred while processing your image. Please try again.")
