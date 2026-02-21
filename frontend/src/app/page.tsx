@@ -85,7 +85,7 @@ export default function Home() {
     if (!extractedData || !extractedData.entries) return;
     const headers = ["Date", "Description / Name", "Amount", "Status"];
     const rows = extractedData.entries.map((e: any) => [`"${e.date}"`, `"${e.name}"`, `"${e.amount}"`, `"${e.status}"`]);
-    const csvContent = [headers.join(","), ...rows.map(e => e.join(","))].join("\n");
+    const csvContent = [headers.join(","), ...rows.map((e: string[]) => e.join(","))].join("\n");
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement("a");
     const url = URL.createObjectURL(blob);
