@@ -157,14 +157,20 @@ def confirm_record(record_id: str, verified_data: dict):
         if not sheet_id:
              raise ValueError("GOOGLE_SHEET_ID not set")
              
-        append_to_sheet(sheet_id, "Sheet1!A:D", sheet_rows)
+        timestamp_str = datetime.datetime.now().strftime("%Y-%b-%d_%H%M")
+        new_tab_name = f"WebLog_{timestamp_str}"
+        
+        # Create a new tab uniquely for this web upload
+        new_gid = create_and_append_sheet(sheet_id, new_tab_name, sheet_rows)
+        
+        sheet_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/edit#gid={new_gid}"
         
         # Mark as confirmed
         cursor.execute("UPDATE records SET status = 'CONFIRMED', data = ? WHERE id = ?", (json.dumps(verified_data), record_id))
         conn.commit()
         conn.close()
         
-        return {"status": "success", "message": "Data saved to Google Sheets"}
+        return {"status": "success", "message": "Data saved to unique Google Sheets tab", "sheet_url": sheet_url, "entries": entries}
         
     except Exception as e:
         conn.close()

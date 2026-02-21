@@ -14,6 +14,7 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [isConfirming, setIsConfirming] = useState(false);
   const [success, setSuccess] = useState(false);
+  const [sheetUrl, setSheetUrl] = useState<string | null>(null);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -64,7 +65,8 @@ export default function Home() {
     setError(null);
 
     try {
-      await axios.post(`${API_URL}/confirm/${recordId}`, extractedData);
+      const response = await axios.post(`${API_URL}/confirm/${recordId}`, extractedData);
+      setSheetUrl(response.data.sheet_url);
       setSuccess(true);
     } catch (err: any) {
       setError(err.response?.data?.detail || "An error occurred while confirming data.");
@@ -77,6 +79,21 @@ export default function Home() {
     const newData = { ...extractedData };
     newData.entries[index][field] = value;
     setExtractedData(newData);
+  };
+
+  const handleDownloadCsv = () => {
+    if (!extractedData || !extractedData.entries) return;
+    const headers = ["Date", "Description / Name", "Amount", "Status"];
+    const rows = extractedData.entries.map((e: any) => [`"${e.date}"`, `"${e.name}"`, `"${e.amount}"`, `"${e.status}"`]);
+    const csvContent = [headers.join(","), ...rows.map(e => e.join(","))].join("\n");
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement("a");
+    const url = URL.createObjectURL(blob);
+    link.setAttribute("href", url);
+    link.setAttribute("download", `AirStore_Ledger_${new Date().getTime()}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   return (
@@ -151,11 +168,29 @@ export default function Home() {
                 <CheckCircle className="w-10 h-10" />
               </div>
               <h2 className="text-3xl font-bold text-white mb-4">Sync Successful</h2>
-              <p className="text-slate-400 mb-10 text-lg">Your entries have been securely digitized and appended to your connected AirStore Sheet.</p>
+              <p className="text-slate-400 mb-10 text-lg">Your entries have been securely digitized into a completely new Google Sheets tab.</p>
+
+              <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-8">
+                {sheetUrl && (
+                  <button
+                    onClick={() => window.open(sheetUrl, '_blank')}
+                    className="px-6 py-4 bg-[#1e8e3e] text-white font-semibold rounded-2xl hover:bg-[#188038] transition shadow-[0_0_20px_rgba(30,142,62,0.4)] flex items-center gap-2 w-full sm:w-auto justify-center"
+                  >
+                    Open Sheet Tab
+                  </button>
+                )}
+
+                <button
+                  onClick={handleDownloadCsv}
+                  className="px-6 py-4 bg-[#1A1A1D] border border-white/10 text-white font-semibold rounded-2xl hover:bg-white/[0.05] transition flex items-center gap-2 w-full sm:w-auto justify-center"
+                >
+                  <FileText className="w-5 h-5" /> Download CSV
+                </button>
+              </div>
 
               <button
                 onClick={() => window.location.reload()}
-                className="px-8 py-4 bg-white text-black font-semibold rounded-2xl hover:bg-slate-200 transition shadow-[0_0_30px_rgba(255,255,255,0.2)] flex items-center gap-2 mx-auto"
+                className="px-8 py-4 bg-white/10 text-slate-300 font-semibold rounded-2xl hover:bg-white/20 transition flex items-center gap-2 mx-auto"
               >
                 Upload Next Record <MoveRight className="w-5 h-5" />
               </button>
