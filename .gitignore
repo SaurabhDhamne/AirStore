@@ -1,0 +1,35 @@
+# --- Root / OS ---
+.DS_Store
+
+# --- Backend (Python / FastAPI) ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+backend/records.db
+backend/.env
+backend/credentials.json
+backend/temp_*
+
+# --- Frontend (Next.js) ---
+frontend/node_modules/
+frontend/.pnp
+frontend/.pnp.*
+frontend/.yarn/*
+!frontend/.yarn/patches
+!frontend/.yarn/plugins
+!frontend/.yarn/releases
+!frontend/.yarn/versions
+frontend/coverage/
+frontend/.next/
+frontend/out/
+frontend/build/
+frontend/*.pem
+frontend/npm-debug.log*
+frontend/yarn-debug.log*
+frontend/yarn-error.log*
+frontend/.pnpm-debug.log*
+frontend/.env*
+frontend/.vercel/
+frontend/*.tsbuildinfo
+frontend/next-env.d.ts
