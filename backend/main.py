@@ -14,6 +14,8 @@ load_dotenv(dotenv_path=env_path, override=True)
 from services.gemini_service import init_gemini, extract_ledger_data
 from services.sheets_service import append_to_sheet
 
+WHATSAPP_VERIFY_TOKEN = os.getenv("WHATSAPP_VERIFY_TOKEN", "airstore_secure_token_123")
+
 # Initialize Gemini
 init_gemini()
 
@@ -165,3 +167,40 @@ def confirm_record(record_id: str, verified_data: dict):
     except Exception as e:
         conn.close()
         raise HTTPException(status_code=500, detail=str(e))
+
+# ==========================================
+# WHATSAPP WEBHOOK INTEGRATION
+# ==========================================
+
+from fastapi import Request
+from fastapi.responses import PlainTextResponse
+
+@app.get("/webhook")
+async def verify_webhook(request: Request):
+    """
+    Meta uses this endpoint to verify that you actually own this webhook URL.
+    It sends a GET request with hub.mode, hub.challenge, and hub.verify_token.
+    """
+    mode = request.query_params.get("hub.mode")
+    token = request.query_params.get("hub.verify_token")
+    challenge = request.query_params.get("hub.challenge")
+
+    if mode and token:
+        if mode == "subscribe" and token == WHATSAPP_VERIFY_TOKEN:
+            print("WEBHOOK_VERIFIED")
+            return PlainTextResponse(content=challenge, status_code=200)
+        else:
+            raise HTTPException(status_code=403, detail="Verification failed")
+    
+    raise HTTPException(status_code=400, detail="Bad Request")
+
+@app.post("/webhook")
+async def receive_whatsapp_message(request: Request):
+    """
+    Meta sends POST requests here whenever someone messages the WhatsApp bot.
+    """
+    body = await request.json()
+    print("Incoming WhatsApp Event:", body)
+    
+    # We will build out the extraction logic here after we verify the webhook!
+    return {"status": "success"}
