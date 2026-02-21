@@ -30,6 +30,8 @@ export default function Home() {
     setPreviewUrl(null);
   }
 
+  const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
   const handleUpload = async () => {
     if (!file) return;
     setIsUploading(true);
@@ -39,7 +41,7 @@ export default function Home() {
     formData.append("file", file);
 
     try {
-      const response = await axios.post("http://localhost:8000/upload", formData, {
+      const response = await axios.post(`${API_URL}/upload`, formData, {
         headers: { "Content-Type": "multipart/form-data" },
       });
 
@@ -62,7 +64,7 @@ export default function Home() {
     setError(null);
 
     try {
-      await axios.post(`http://localhost:8000/confirm/${recordId}`, extractedData);
+      await axios.post(`${API_URL}/confirm/${recordId}`, extractedData);
       setSuccess(true);
     } catch (err: any) {
       setError(err.response?.data?.detail || "An error occurred while confirming data.");
